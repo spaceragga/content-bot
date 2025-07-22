@@ -56,10 +56,12 @@ async function fetchRandomMeme(): Promise<MemeResponse | null> {
         const randomSubreddit =
             subreddits[Math.floor(Math.random() * subreddits.length)];
 
+        console.log(`🔍 Fetching meme from r/${randomSubreddit}...`);
+
         const response = await axios.get(
             `https://meme-api.com/gimme/${randomSubreddit}`,
             {
-                timeout: 10000,
+                timeout: 15000,
                 headers: {
                     "User-Agent": "ContentBot/1.0",
                 },
@@ -67,6 +69,7 @@ async function fetchRandomMeme(): Promise<MemeResponse | null> {
         );
 
         const data = response.data;
+        console.log(`📊 Meme data: ${data.title} | Ups: ${data.ups} | URL: ${data.url?.substring(0, 50)}...`);
 
         // Check for repeats
         if (
@@ -74,7 +77,7 @@ async function fetchRandomMeme(): Promise<MemeResponse | null> {
             (data.url.includes(".jpg") ||
                 data.url.includes(".png") ||
                 data.url.includes(".gif")) &&
-            data.ups >= 1000 &&
+            data.ups >= 100 && // Lowered threshold temporarily
             !recentMemes.has(data.url)
         ) {
             // Add to recent memes
@@ -84,6 +87,7 @@ async function fetchRandomMeme(): Promise<MemeResponse | null> {
                 const first = recentMemes.values().next().value;
                 recentMemes.delete(first as string);
             }
+            console.log(`✅ Found good meme: ${data.title} (${data.ups} ups)`);
             return {
                 url: data.url,
                 title: data.title || "Untitled Meme",
@@ -94,10 +98,15 @@ async function fetchRandomMeme(): Promise<MemeResponse | null> {
             };
         }
 
+        console.log(`⚠️ Meme didn't meet criteria: ups=${data.ups}, isImage=${!!data.url}, isRepeat=${recentMemes.has(data.url)}`);
         // If no high-rated or non-repeated meme found, try again (recursive call with limit)
         return await retryFetchMeme(randomSubreddit, 3);
-    } catch (error) {
-        console.error("Error fetching meme:", error);
+    } catch (error: any) {
+        console.error("❌ Error fetching meme:", error.message);
+        if (error.response) {
+            console.error("Response status:", error.response.status);
+            console.error("Response data:", error.response.data);
+        }
         return null;
     }
 }
@@ -107,13 +116,18 @@ async function retryFetchMeme(
     subreddit: string,
     attempts: number
 ): Promise<MemeResponse | null> {
-    if (attempts <= 0) return null;
+    if (attempts <= 0) {
+        console.log("❌ All retry attempts failed");
+        return null;
+    }
 
     try {
+        console.log(`🔄 Retry attempt ${attempts} for r/${subreddit}...`);
+
         const response = await axios.get(
             `https://meme-api.com/gimme/${subreddit}`,
             {
-                timeout: 10000,
+                timeout: 15000,
                 headers: {
                     "User-Agent": "ContentBot/1.0",
                 },
@@ -121,9 +135,9 @@ async function retryFetchMeme(
         );
 
         const data = response.data;
-
-        // Lower threshold for retries
         const minUpvotes = attempts === 3 ? 500 : 100;
+
+        console.log(`📊 Retry meme: ${data.title} | Ups: ${data.ups} | Min required: ${minUpvotes}`);
 
         if (
             data.url &&
@@ -138,6 +152,7 @@ async function retryFetchMeme(
                 const first = recentMemes.values().next().value;
                 recentMemes.delete(first as string);
             }
+            console.log(`✅ Found meme on retry: ${data.title} (${data.ups} ups)`);
             return {
                 url: data.url,
                 title: data.title || "Untitled Meme",
@@ -148,11 +163,12 @@ async function retryFetchMeme(
             };
         }
 
+        console.log(`⚠️ Retry meme didn't meet criteria: ups=${data.ups}, min=${minUpvotes}`);
         // Wait a bit before retrying
         await new Promise((resolve) => setTimeout(resolve, 1000));
         return await retryFetchMeme(subreddit, attempts - 1);
-    } catch (error) {
-        console.error(`Retry attempt ${attempts} failed:`, error);
+    } catch (error: any) {
+        console.error(`❌ Retry attempt ${attempts} failed:`, error.message);
         return await retryFetchMeme(subreddit, attempts - 1);
     }
 }
