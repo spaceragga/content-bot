@@ -185,8 +185,21 @@ app.listen(PORT, () => {
 if (process.env.NODE_ENV === "production") {
     app.use(bot.webhookCallback("/webhook"));
 
-    // Set webhook URL
-    bot.telegram.setWebhook(`${process.env.HEROKU_URL}/webhook`);
+    // Set webhook URL with error handling
+    if (process.env.HEROKU_URL) {
+        bot.telegram.setWebhook(`${process.env.HEROKU_URL}/webhook`)
+            .then(() => {
+                console.log("✅ Webhook set successfully");
+            })
+            .catch((error) => {
+                console.error("❌ Failed to set webhook:", error.message);
+                console.log("🔄 Falling back to polling mode");
+                bot.launch();
+            });
+    } else {
+        console.log("⚠️ HEROKU_URL not set, using polling mode");
+        bot.launch();
+    }
 } else {
     // Use polling for development
     bot.launch();
@@ -210,12 +223,20 @@ process.once("SIGTERM", () => {
 // Handle uncaught exceptions
 process.on("uncaughtException", (error) => {
     console.error("❌ Uncaught Exception:", error);
-    bot.stop("SIGTERM");
+    try {
+        bot.stop("SIGTERM");
+    } catch (e) {
+        console.log("Bot already stopped");
+    }
     process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
     console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
-    bot.stop("SIGTERM");
+    try {
+        bot.stop("SIGTERM");
+    } catch (e) {
+        console.log("Bot already stopped");
+    }
     process.exit(1);
 });
